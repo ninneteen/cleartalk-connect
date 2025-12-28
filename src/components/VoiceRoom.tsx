@@ -253,10 +253,19 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
           </div>
         )}
 
-        {/* Audio Status */}
-        <div className="mb-4 p-3 bg-card/50 border border-border rounded-lg">
-          <p className="text-xs text-muted-foreground text-center">
-            🔇 ตัดเสียงรบกวน/เสียงสะท้อน • 🌐 รองรับข้ามเน็ตเวิร์ค • 🎧 ไม่ได้ยินเสียงตัวเอง
+        {/* Connection Status */}
+        <div className={cn(
+          "mb-4 p-3 border rounded-lg",
+          wsConnected 
+            ? "bg-success/10 border-success/30" 
+            : "bg-destructive/10 border-destructive/30"
+        )}>
+          <p className="text-xs text-center">
+            {wsConnected ? (
+              <>✅ เชื่อมต่อ WebSocket สำเร็จ (ID: {myId}) • 🔇 ตัดเสียงรบกวน • 🎧 ไม่ได้ยินเสียงตัวเอง</>
+            ) : (
+              <>❌ ยังไม่ได้เชื่อมต่อ WebSocket • กรุณาตรวจสอบ URL เซิร์ฟเวอร์</>
+            )}
           </p>
         </div>
 

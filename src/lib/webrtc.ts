@@ -196,40 +196,66 @@ export class WebRTCManager {
     return new Promise((resolve, reject) => {
       try {
         console.log('Connecting to signaling server:', serverUrl);
+        
+        // Timeout for connection
+        const connectionTimeout = setTimeout(() => {
+          console.error('WebSocket connection timeout');
+          reject(new Error('Connection timeout - server not responding'));
+        }, 10000);
+
         this.ws = new WebSocket(serverUrl);
 
         this.ws.onopen = () => {
-          console.log('Connected to signaling server');
+          console.log('✅ WebSocket connected to signaling server');
+          clearTimeout(connectionTimeout);
         };
 
         this.ws.onmessage = async (event) => {
-          const data = JSON.parse(event.data);
-          console.log('Received signaling message:', data.type);
-          await this.handleSignalingMessage(data);
+          try {
+            const data = JSON.parse(event.data);
+            console.log('📩 Received signaling message:', data.type, data);
+            await this.handleSignalingMessage(data);
 
-          if (data.type === 'user-connected' && data.id) {
-            if (!this.myId) {
-              this.myId = data.id;
-              console.log('My ID assigned:', this.myId);
-              resolve(this.myId);
-            } else {
-              console.log('New user connected:', data.id);
-              this.onUserConnected(data.id);
-              // Initiate connection to new user
-              await this.createOffer(data.id);
+            if (data.type === 'user-connected' && data.id) {
+              if (!this.myId) {
+                this.myId = data.id;
+                console.log('🆔 My ID assigned:', this.myId);
+                resolve(this.myId);
+              } else {
+                console.log('👤 New user connected:', data.id);
+                this.onUserConnected(data.id);
+                // Initiate connection to new user
+                await this.createOffer(data.id);
+              }
             }
+          } catch (parseError) {
+            console.error('Failed to parse message:', parseError, event.data);
           }
         };
 
         this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          reject(error);
+          clearTimeout(connectionTimeout);
+          console.error('❌ WebSocket error:', error);
+          // Get more details about the error
+          const errorMsg = `WebSocket error - check if server is running and accessible at ${serverUrl}`;
+          reject(new Error(errorMsg));
         };
 
-        this.ws.onclose = () => {
-          console.log('Disconnected from signaling server');
+        this.ws.onclose = (event) => {
+          clearTimeout(connectionTimeout);
+          console.log('🔌 Disconnected from signaling server', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean
+          });
+          
+          // If closed before we got our ID, reject
+          if (!this.myId) {
+            reject(new Error(`Connection closed: ${event.reason || 'Unknown reason'} (code: ${event.code})`));
+          }
         };
       } catch (error) {
+        console.error('Failed to create WebSocket:', error);
         reject(error);
       }
     });
