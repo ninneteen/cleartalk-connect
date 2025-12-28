@@ -192,7 +192,10 @@ export class WebRTCManager {
     return this.localStream !== null || this.processedStream !== null;
   }
 
-  connectToSignalingServer(serverUrl: string): Promise<string> {
+  connectToSignalingServer(
+    serverUrl: string,
+    onOpen?: () => void
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       try {
         console.log('Connecting to signaling server:', serverUrl);
@@ -208,6 +211,7 @@ export class WebRTCManager {
         this.ws.onopen = () => {
           console.log('✅ WebSocket connected to signaling server');
           clearTimeout(connectionTimeout);
+          onOpen?.();
         };
 
         this.ws.onmessage = async (event) => {
