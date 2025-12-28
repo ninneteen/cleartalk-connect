@@ -1,14 +1,39 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import React, { useState } from 'react';
+import { ApiKeyForm } from '@/components/ApiKeyForm';
+import { VoiceRoom } from '@/components/VoiceRoom';
 
 const Index = () => {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
-    </div>
-  );
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [credentials, setCredentials] = useState({ apiKey: '', wsUrl: '' });
+
+  const handleConnect = async (apiKey: string, wsUrl: string) => {
+    setIsConnecting(true);
+    setCredentials({ apiKey, wsUrl });
+
+    // Small delay for UX
+    setTimeout(() => {
+      setIsConnected(true);
+      setIsConnecting(false);
+    }, 500);
+  };
+
+  const handleDisconnect = () => {
+    setIsConnected(false);
+    setCredentials({ apiKey: '', wsUrl: '' });
+  };
+
+  if (isConnected) {
+    return (
+      <VoiceRoom
+        apiKey={credentials.apiKey}
+        wsUrl={credentials.wsUrl}
+        onDisconnect={handleDisconnect}
+      />
+    );
+  }
+
+  return <ApiKeyForm onConnect={handleConnect} isConnecting={isConnecting} />;
 };
 
 export default Index;
