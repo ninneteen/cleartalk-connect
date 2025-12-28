@@ -149,24 +149,30 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
         );
         webrtcRef.current = manager;
 
-        // Connect to WebSocket ONLY - no mic request
-        try {
-          const id = await manager.connectToSignalingServer(wsUrl);
-          setMyId(id);
-          setWsConnected(true);
+         // Connect to WebSocket ONLY - no mic request
+         try {
+           const id = await manager.connectToSignalingServer(wsUrl, () => {
+             setWsConnected(true);
+             toast({
+               title: 'เชื่อมต่อ WebSocket แล้ว',
+               description: 'กำลังรอรับ ID จากเซิร์ฟเวอร์...',
+             });
+           });
+           setMyId(id);
 
-          toast({
-            title: 'เชื่อมต่อสำเร็จ',
-            description: `ID ของคุณ: ${id}`,
-          });
-        } catch (wsErr) {
-          console.error('WebSocket connection failed:', wsErr);
-          toast({
-            variant: 'destructive',
-            title: 'เชื่อมต่อ WebSocket ไม่ได้',
-            description: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เสียงได้',
-          });
-        }
+           toast({
+             title: 'เชื่อมต่อสำเร็จ',
+             description: `ID ของคุณ: ${id}`,
+           });
+         } catch (wsErr) {
+           console.error('WebSocket connection failed:', wsErr);
+           setWsConnected(false);
+           toast({
+             variant: 'destructive',
+             title: 'เชื่อมต่อ WebSocket ไม่ได้',
+             description: wsErr instanceof Error ? wsErr.message : 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เสียงได้',
+           });
+         }
 
         setMicPermissionGranted(false);
         setIsMicOn(false);
