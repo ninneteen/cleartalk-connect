@@ -262,8 +262,8 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
         {/* Connection Status */}
         <div className={cn(
           "mb-4 p-3 border rounded-lg",
-          wsConnected 
-            ? "bg-success/10 border-success/30" 
+          wsConnected
+            ? "bg-success/10 border-success/30"
             : "bg-destructive/10 border-destructive/30"
         )}>
           <p className="text-xs text-center">

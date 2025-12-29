@@ -47,51 +47,45 @@ export function ApiKeyForm({ onConnect, isConnecting }: ApiKeyFormProps) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 className="bg-input border-border"
-                required
+                disabled={isConnecting}
               />
             </div>
 
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Server className="w-4 h-4 text-primary" />
+                <Server className="w-4 h-4 text-accent" />
                 WebSocket URL
               </label>
               <Input
                 type="text"
-                placeholder="wss://ws-mike.runaesike.online"
+                placeholder="wss://..."
                 value={wsUrl}
                 onChange={(e) => setWsUrl(e.target.value)}
                 className="bg-input border-border"
-                required
+                disabled={isConnecting}
               />
             </div>
           </div>
 
           <Button
             type="submit"
-            className="w-full h-12 text-lg glow-primary"
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
             disabled={isConnecting || !apiKey.trim() || !wsUrl.trim()}
           >
             {isConnecting ? (
               <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 กำลังเชื่อมต่อ...
               </>
             ) : (
-              'เข้าร่วมห้อง'
+              'เชื่อมต่อ'
             )}
           </Button>
         </form>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
-          หลังเข้าห้อง กดปุ่มไมค์เพื่อเริ่มพูดคุย
+          ใช้งานสำหรับเซิร์ฟเวอร์ MikeCraft เท่านั้น
         </p>
-
-        <div className="mt-6 p-4 bg-card/50 border border-border rounded-lg">
-          <p className="text-xs text-muted-foreground text-center">
-            ✨ รองรับการเชื่อมต่อข้ามเน็ตเวิร์ค • ตัดเสียงรบกวนอัตโนมัติ • ไม่ได้ยินเสียงตัวเอง
-          </p>
-        </div>
       </div>
     </div>
   );
