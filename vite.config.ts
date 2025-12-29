@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 1002,
     allowedHosts: [
-      "d.runaesike.online",
+      "d.runaesike.com",
     ],
   },
   plugins: [
