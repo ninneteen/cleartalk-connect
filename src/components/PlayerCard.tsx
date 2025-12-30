@@ -1,85 +1,76 @@
 import React from 'react';
-import { Mic, MicOff, MapPin, User } from 'lucide-react';
 import { Player } from '@/hooks/useProximityData';
+import { Mic, MicOff, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface PlayerCardProps {
   player: Player;
   isMe?: boolean;
   isMuted?: boolean;
-  isSpeaking?: boolean;
 }
 
-export function PlayerCard({ player, isMe, isMuted, isSpeaking }: PlayerCardProps) {
+export function PlayerCard({ player, isMe = false, isMuted = true }: PlayerCardProps) {
   const isOnline = player.status === 'online';
 
   return (
     <div
       className={cn(
-        'bg-card border rounded-lg p-4 transition-all duration-300',
-        isOnline ? 'border-primary/50' : 'border-border opacity-60',
-        isSpeaking && 'border-accent glow-accent',
-        isMe && 'ring-2 ring-primary/30'
+        'relative rounded-xl border p-4 transition-all duration-300',
+        isOnline
+          ? 'bg-card border-border hover:border-primary/50 hover:shadow-lg'
+          : 'bg-muted/30 border-border/50 opacity-60'
       )}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              'w-10 h-10 rounded-lg flex items-center justify-center',
-              isOnline ? 'bg-primary/20' : 'bg-muted'
-            )}
-          >
-            <User className={cn('w-5 h-5', isOnline ? 'text-primary' : 'text-muted-foreground')} />
-          </div>
-          <div>
-            <p className="font-semibold text-foreground flex items-center gap-2">
-              {player.name}
-              {isMe && (
-                <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
-                  คุณ
-                </span>
-              )}
-            </p>
-            <p className="text-sm text-muted-foreground">{player.gamemode}</p>
-          </div>
+      {isMe && (
+        <div className="absolute -top-2 -right-2 bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
+          คุณ
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        {/* Avatar */}
+        <div
+          className={cn(
+            'w-12 h-12 rounded-lg flex items-center justify-center',
+            isOnline ? 'bg-primary/10' : 'bg-muted'
+          )}
+        >
+          <User className={cn('w-6 h-6', isOnline ? 'text-primary' : 'text-muted-foreground')} />
         </div>
 
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              'w-2 h-2 rounded-full',
-              isOnline ? 'bg-success animate-pulse' : 'bg-muted-foreground'
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-foreground truncate">{player.name}</h3>
+            {isOnline && (
+              <div className="flex items-center gap-1">
+                {isMuted ? (
+                  <MicOff className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <Mic className="w-4 h-4 text-success animate-pulse" />
+                )}
+              </div>
             )}
-          />
-          {isOnline && (
-            <div
-              className={cn(
-                'p-1.5 rounded-md',
-                isMuted ? 'bg-destructive/20' : 'bg-primary/20'
-              )}
-            >
-              {isMuted ? (
-                <MicOff className="w-4 h-4 text-destructive" />
-              ) : (
-                <Mic className="w-4 h-4 text-primary" />
-              )}
-            </div>
+          </div>
+
+          {isOnline ? (
+            <p className="text-xs text-muted-foreground">
+              {player.dim} • {Math.round(player.x)}, {Math.round(player.y)}, {Math.round(player.z)}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              ออฟไลน์ • {player.lastSeen}
+            </p>
           )}
         </div>
-      </div>
 
-      <div className="flex items-center gap-2 text-sm">
-        <MapPin className="w-4 h-4 text-accent" />
-        <span className="text-muted-foreground font-mono">
-          X: {Math.round(player.x)} Y: {Math.round(player.y)} Z: {Math.round(player.z)}
-        </span>
-      </div>
-
-      <div className="mt-2 flex items-center gap-2">
-        <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-          {player.dim.replace('minecraft:', '')}
-        </span>
+        {/* Status indicator */}
+        <div
+          className={cn(
+            'w-3 h-3 rounded-full',
+            isOnline ? 'bg-success animate-pulse' : 'bg-muted-foreground/50'
+          )}
+        />
       </div>
     </div>
   );

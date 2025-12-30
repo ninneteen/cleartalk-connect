@@ -37,13 +37,13 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
   const { data, loading, error, startPolling } = useProximityData();
   const { toast } = useToast();
 
-  // Use refs for callbacks to prevent re-renders triggering reconnection
-  const handlePeerAudioRef = useRef((peerId: string, stream: MediaStream) => {
-    console.log('Received audio from peer:', peerId);
+  // Handle peer audio
+  const handlePeerAudio = useCallback((peerId: string, stream: MediaStream) => {
+    console.log('🔊 Received audio from peer:', peerId);
 
-    // CRITICAL: Don't play our own audio back to ourselves
+    // Don't play our own audio
     if (peerId === webrtcRef.current?.getMyId()) {
-      console.log('Skipping own audio to prevent echo');
+      console.log('🔇 Skipping own audio to prevent echo');
       return;
     }
 
@@ -53,24 +53,35 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
       audioEl = new Audio();
       audioEl.autoplay = true;
       audioEl.muted = false;
-      // Set playsInline for mobile devices
       (audioEl as any).playsInline = true;
       audioElementsRef.current.set(peerId, audioEl);
     }
     audioEl.srcObject = stream;
 
     // Ensure audio plays
-    audioEl.play().catch(err => console.error('Audio play failed:', err));
+    audioEl.play().catch(err => {
+      console.error('❌ Audio play failed:', err);
+      // Try to play again after user interaction
+      document.addEventListener('click', () => {
+        audioEl?.play().catch(console.error);
+      }, { once: true });
+    });
 
     setPeerAudios((prev) => {
       const next = new Map(prev);
       next.set(peerId, { peerId, stream, isMuted: false });
       return next;
     });
-  });
 
-  const handlePeerDisconnectRef = useRef((peerId: string) => {
-    console.log('Peer disconnected:', peerId);
+    toast({
+      title: 'เชื่อมต่อเสียงสำเร็จ',
+      description: `กำลังรับเสียงจาก ${peerId}`,
+    });
+  }, [toast]);
+
+  // Handle peer disconnect
+  const handlePeerDisconnect = useCallback((peerId: string) => {
+    console.log('👋 Peer disconnected:', peerId);
 
     const audioEl = audioElementsRef.current.get(peerId);
     if (audioEl) {
@@ -85,27 +96,32 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
     });
 
     setConnectedUsers((prev) => prev.filter((id) => id !== peerId));
-  });
+  }, []);
 
-  const handleUserConnectedRef = useRef((userId: string) => {
-    console.log('User connected:', userId);
-    setConnectedUsers((prev) => [...prev, userId]);
-  });
+  // Handle user connected
+  const handleUserConnected = useCallback((userId: string) => {
+    console.log('👤 User connected:', userId);
+    setConnectedUsers((prev) => {
+      if (prev.includes(userId)) return prev;
+      return [...prev, userId];
+    });
+  }, []);
 
-  const handleMicStatusChangeRef = useRef((userId: string, status: boolean) => {
+  // Handle mic status change
+  const handleMicStatusChange = useCallback((userId: string, status: boolean) => {
     setPeerMicStatus((prev) => {
       const next = new Map(prev);
       next.set(userId, status);
       return next;
     });
-  });
+  }, []);
 
-  // Request mic permission ONLY when user clicks the mic button
+  // Request mic permission
   const requestMicPermission = useCallback(async () => {
     if (micPermissionGranted || !webrtcRef.current) return;
 
     try {
-      console.log('Requesting mic permission with enhanced audio processing...');
+      console.log('🎤 Requesting mic permission...');
       await webrtcRef.current.initLocalStream();
       setMicPermissionGranted(true);
       setIsMicOn(false);
@@ -115,7 +131,7 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
         description: 'ตัดเสียงรบกวนเปิดอยู่ กดปุ่มไมค์อีกครั้งเพื่อเปิดใช้งาน',
       });
     } catch (err) {
-      console.error('Failed to get mic permission:', err);
+      console.error('❌ Failed to get mic permission:', err);
       toast({
         variant: 'destructive',
         title: 'ไม่สามารถเข้าถึงไมค์',
@@ -124,11 +140,10 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
     }
   }, [micPermissionGranted, toast]);
 
-  // Initialize only once
+  // Initialize
   useEffect(() => {
-    // Prevent double initialization
     if (isInitializedRef.current) {
-      console.log('Already initialized, skipping...');
+      console.log('⚠️ Already initialized, skipping...');
       return;
     }
     isInitializedRef.current = true;
@@ -140,45 +155,45 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
         // Start polling proximity data
         stopPollingRef.current = startPolling(apiKey, 5000);
 
-        // Initialize WebRTC manager WITHOUT requesting mic yet
+        // Initialize WebRTC manager
         const manager = new WebRTCManager(
-          (peerId, stream) => handlePeerAudioRef.current(peerId, stream),
-          (peerId) => handlePeerDisconnectRef.current(peerId),
-          (userId) => handleUserConnectedRef.current(userId),
-          (userId, status) => handleMicStatusChangeRef.current(userId, status)
+          handlePeerAudio,
+          handlePeerDisconnect,
+          handleUserConnected,
+          handleMicStatusChange
         );
         webrtcRef.current = manager;
 
-         // Connect to WebSocket ONLY - no mic request
-         try {
-           const id = await manager.connectToSignalingServer(wsUrl, () => {
-             setWsConnected(true);
-             toast({
-               title: 'เชื่อมต่อ WebSocket แล้ว',
-               description: 'กำลังรอรับ ID จากเซิร์ฟเวอร์...',
-             });
-           });
-           setMyId(id);
+        // Connect to WebSocket
+        try {
+          const id = await manager.connectToSignalingServer(wsUrl, () => {
+            setWsConnected(true);
+            toast({
+              title: 'เชื่อมต่อ WebSocket แล้ว',
+              description: 'กำลังรอรับ ID จากเซิร์ฟเวอร์...',
+            });
+          });
+          setMyId(id);
 
-           toast({
-             title: 'เชื่อมต่อสำเร็จ',
-             description: `ID ของคุณ: ${id}`,
-           });
-         } catch (wsErr) {
-           console.error('WebSocket connection failed:', wsErr);
-           setWsConnected(false);
-           toast({
-             variant: 'destructive',
-             title: 'เชื่อมต่อ WebSocket ไม่ได้',
-             description: wsErr instanceof Error ? wsErr.message : 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เสียงได้',
-           });
-         }
+          toast({
+            title: 'เชื่อมต่อสำเร็จ',
+            description: `ID ของคุณ: ${id}`,
+          });
+        } catch (wsErr) {
+          console.error('❌ WebSocket connection failed:', wsErr);
+          setWsConnected(false);
+          toast({
+            variant: 'destructive',
+            title: 'เชื่อมต่อ WebSocket ไม่ได้',
+            description: wsErr instanceof Error ? wsErr.message : 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เสียงได้',
+          });
+        }
 
         setMicPermissionGranted(false);
         setIsMicOn(false);
 
       } catch (err) {
-        console.error('Failed to initialize:', err);
+        console.error('❌ Failed to initialize:', err);
         toast({
           variant: 'destructive',
           title: 'เกิดข้อผิดพลาด',
@@ -192,7 +207,7 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
     init();
 
     return () => {
-      console.log('Cleaning up VoiceRoom...');
+      console.log('🧹 Cleaning up VoiceRoom...');
       if (stopPollingRef.current) {
         stopPollingRef.current();
       }
@@ -203,7 +218,7 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
       audioElementsRef.current.clear();
       isInitializedRef.current = false;
     };
-  }, [apiKey, wsUrl]); // Only depend on props that don't change
+  }, [apiKey, wsUrl, startPolling, handlePeerAudio, handlePeerDisconnect, handleUserConnected, handleMicStatusChange, toast]);
 
   const toggleMic = async () => {
     if (!micPermissionGranted) {
@@ -212,7 +227,7 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
     }
 
     const newState = !isMicOn;
-    console.log('Toggling mic to:', newState);
+    console.log('🎤 Toggling mic to:', newState);
     setIsMicOn(newState);
     webrtcRef.current?.toggleMic(newState);
   };
@@ -227,12 +242,12 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
   const offlinePlayers = players.filter((p) => p.status !== 'online');
 
   return (
-    <div className="min-h-screen bg-background grid-bg">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="font-pixel text-lg text-primary">MikeCraft</h1>
+            <h1 className="text-xl font-bold text-primary">MikeCraft</h1>
             <p className="text-sm text-muted-foreground">
               {data?.serverName || 'กำลังโหลด...'}
             </p>
@@ -261,7 +276,7 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
 
         {/* Connection Status */}
         <div className={cn(
-          "mb-4 p-3 border rounded-lg",
+          "mb-4 p-3 border rounded-xl",
           wsConnected
             ? "bg-success/10 border-success/30"
             : "bg-destructive/10 border-destructive/30"
@@ -279,17 +294,37 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
         {peerAudios.size > 0 && (
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-              <Volume2 className="w-5 h-5 text-accent" />
+              <Volume2 className="w-5 h-5 text-success" />
               เชื่อมต่อเสียงกับ {peerAudios.size} คน
             </h2>
             <div className="flex flex-wrap gap-2">
               {Array.from(peerAudios.values()).map(({ peerId }) => (
                 <div
                   key={peerId}
-                  className="bg-accent/10 text-accent px-3 py-1.5 rounded-full text-sm flex items-center gap-2"
+                  className="bg-success/10 text-success px-3 py-1.5 rounded-full text-sm flex items-center gap-2"
                 >
-                  <span className="w-2 h-2 bg-accent rounded-full animate-pulse" />
+                  <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
                   {peerId}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Connected Peers Info */}
+        {connectedUsers.length > 0 && (
+          <div className="mb-6 p-4 bg-card border border-border rounded-xl">
+            <h2 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+              <Users className="w-4 h-4 text-primary" />
+              Peers ที่เชื่อมต่อ ({connectedUsers.length})
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {connectedUsers.map((userId) => (
+                <div
+                  key={userId}
+                  className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs"
+                >
+                  {userId}
                 </div>
               ))}
             </div>
@@ -353,8 +388,8 @@ export function VoiceRoom({ apiKey, wsUrl, onDisconnect }: VoiceRoomProps) {
               !micPermissionGranted
                 ? 'bg-muted text-muted-foreground hover:bg-muted/90'
                 : isMicOn
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90 glow-primary'
-                  : 'bg-destructive text-destructive-foreground hover:bg-destructive/90 glow-destructive'
+                  ? 'bg-success text-success-foreground hover:bg-success/90 shadow-lg shadow-success/30'
+                  : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
             )}
           >
             {isMicOn ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}

@@ -2,52 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600;700&display=swap');
+/* MikeCraft Voice Chat Design System */
 
 @layer base {
   :root {
-    --background: 220 20% 8%;
-    --foreground: 150 50% 95%;
+    --background: 220 20% 97%;
+    --foreground: 220 20% 10%;
 
-    --card: 220 20% 12%;
-    --card-foreground: 150 50% 95%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
 
-    --popover: 220 20% 10%;
-    --popover-foreground: 150 50% 95%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
 
-    --primary: 145 70% 45%;
-    --primary-foreground: 220 20% 8%;
+    --primary: 142 70% 45%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 20% 18%;
-    --secondary-foreground: 150 50% 90%;
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 20% 20%;
 
-    --muted: 220 15% 20%;
-    --muted-foreground: 220 10% 60%;
+    --muted: 220 15% 92%;
+    --muted-foreground: 220 10% 45%;
 
-    --accent: 180 70% 45%;
-    --accent-foreground: 220 20% 8%;
+    --accent: 200 90% 50%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 70% 50%;
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 75% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 145 70% 45%;
-    --success-foreground: 220 20% 8%;
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 142 70% 45%;
 
-    --warning: 45 90% 50%;
-    --warning-foreground: 220 20% 8%;
-
-    --border: 220 15% 25%;
-    --input: 220 15% 20%;
-    --ring: 145 70% 45%;
-
-    --radius: 0.5rem;
-
-    --font-pixel: 'Press Start 2P', cursive;
-    --font-sans: 'Inter', sans-serif;
-
-    --glow-primary: 0 0 20px hsl(145 70% 45% / 0.4);
-    --glow-accent: 0 0 20px hsl(180 70% 45% / 0.4);
-    --glow-destructive: 0 0 20px hsl(0 70% 50% / 0.4);
+    --radius: 0.75rem;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -60,33 +50,36 @@
   }
 
   .dark {
-    --background: 220 20% 8%;
-    --foreground: 150 50% 95%;
+    --background: 220 25% 8%;
+    --foreground: 220 15% 95%;
 
-    --card: 220 20% 12%;
-    --card-foreground: 150 50% 95%;
+    --card: 220 25% 12%;
+    --card-foreground: 220 15% 95%;
 
-    --popover: 220 20% 10%;
-    --popover-foreground: 150 50% 95%;
+    --popover: 220 25% 12%;
+    --popover-foreground: 220 15% 95%;
 
-    --primary: 145 70% 45%;
-    --primary-foreground: 220 20% 8%;
+    --primary: 142 70% 50%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 220 20% 18%;
-    --secondary-foreground: 150 50% 90%;
+    --secondary-foreground: 220 15% 90%;
 
-    --muted: 220 15% 20%;
-    --muted-foreground: 220 10% 60%;
+    --muted: 220 20% 18%;
+    --muted-foreground: 220 10% 55%;
 
-    --accent: 180 70% 45%;
-    --accent-foreground: 220 20% 8%;
+    --accent: 200 90% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 142 70% 50%;
+    --success-foreground: 0 0% 100%;
 
     --destructive: 0 70% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 25%;
-    --input: 220 15% 20%;
-    --ring: 145 70% 45%;
+    --border: 220 20% 20%;
+    --input: 220 20% 20%;
+    --ring: 142 70% 50%;
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -105,73 +98,13 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
-    font-family: var(--font-sans);
-  }
-
-  .font-pixel {
-    font-family: var(--font-pixel);
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
 @layer utilities {
-  .glow-primary {
-    box-shadow: var(--glow-primary);
-  }
-
-  .glow-accent {
-    box-shadow: var(--glow-accent);
-  }
-
-  .glow-destructive {
-    box-shadow: var(--glow-destructive);
-  }
-
-  .animate-pulse-glow {
-    animation: pulse-glow 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-glow {
-    0%, 100% {
-      box-shadow: 0 0 10px hsl(145 70% 45% / 0.3);
-    }
-    50% {
-      box-shadow: 0 0 25px hsl(145 70% 45% / 0.6);
-    }
-  }
-
-  .animate-float {
-    animation: float 3s ease-in-out infinite;
-  }
-
-  @keyframes float {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-5px);
-    }
-  }
-
-  .grid-bg {
-    background-image:
-      linear-gradient(to right, hsl(220 15% 20% / 0.3) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(220 15% 20% / 0.3) 1px, transparent 1px);
-    background-size: 40px 40px;
-  }
-
-  .speaking-indicator {
-    animation: speaking-pulse 0.5s ease-in-out infinite alternate;
-  }
-
-  @keyframes speaking-pulse {
-    0% {
-      transform: scale(1);
-      opacity: 0.8;
-    }
-    100% {
-      transform: scale(1.1);
-      opacity: 1;
-    }
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 }

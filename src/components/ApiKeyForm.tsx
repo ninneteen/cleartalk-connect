@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Key, Server, Loader2 } from 'lucide-react';
+import { Key, Server, Loader2, Mic } from 'lucide-react';
 
 interface ApiKeyFormProps {
   onConnect: (apiKey: string, wsUrl: string) => void;
@@ -20,10 +20,13 @@ export function ApiKeyForm({ onConnect, isConnecting }: ApiKeyFormProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 grid-bg">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-primary/5">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="font-pixel text-2xl text-primary mb-4 animate-float">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-4">
+            <Mic className="w-8 h-8 text-primary" />
+          </div>
+          <h1 className="text-3xl font-bold text-primary mb-4 tracking-tight">
             MikeCraft
           </h1>
           <p className="text-xl font-semibold text-foreground mb-2">
@@ -35,7 +38,7 @@ export function ApiKeyForm({ onConnect, isConnecting }: ApiKeyFormProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+          <div className="bg-card border border-border rounded-xl p-6 space-y-4 shadow-lg">
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <Key className="w-4 h-4 text-primary" />
@@ -43,48 +46,49 @@ export function ApiKeyForm({ onConnect, isConnecting }: ApiKeyFormProps) {
               </label>
               <Input
                 type="text"
-                placeholder="กรอก API Key ของคุณ"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                className="bg-input border-border"
-                disabled={isConnecting}
+                placeholder="ใส่ API Key ของคุณ"
+                className="bg-background"
+                required
               />
             </div>
 
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Server className="w-4 h-4 text-accent" />
+                <Server className="w-4 h-4 text-primary" />
                 WebSocket URL
               </label>
               <Input
                 type="text"
-                placeholder="wss://..."
                 value={wsUrl}
                 onChange={(e) => setWsUrl(e.target.value)}
-                className="bg-input border-border"
-                disabled={isConnecting}
+                placeholder="wss://your-server.com"
+                className="bg-background"
+                required
               />
             </div>
-          </div>
 
-          <Button
-            type="submit"
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-            disabled={isConnecting || !apiKey.trim() || !wsUrl.trim()}
-          >
-            {isConnecting ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                กำลังเชื่อมต่อ...
-              </>
-            ) : (
-              'เชื่อมต่อ'
-            )}
-          </Button>
+            <Button
+              type="submit"
+              disabled={isConnecting || !apiKey.trim() || !wsUrl.trim()}
+              className="w-full"
+              size="lg"
+            >
+              {isConnecting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  กำลังเชื่อมต่อ...
+                </>
+              ) : (
+                'เชื่อมต่อ'
+              )}
+            </Button>
+          </div>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          ใช้งานสำหรับเซิร์ฟเวอร์ MikeCraft เท่านั้น
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          ต้องมี API Key จากเซิร์ฟเวอร์ MikeCraft
         </p>
       </div>
     </div>

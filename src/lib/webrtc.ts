@@ -1,21 +1,50 @@
-// webrtc.ts
-
 export interface PeerConnection {
   id: string;
   connection: RTCPeerConnection;
-  audioSender?: RTCRtpSender;
-  isPolite: boolean;
-  makingOffer: boolean;
-  pendingCandidates: RTCIceCandidateInit[];
+  audioStream?: MediaStream;
 }
 
+// Enhanced ICE configuration with multiple TURN servers for cross-network connectivity
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
+    // Google STUN servers (free, reliable)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
+    // Additional STUN servers for redundancy
+    { urls: 'stun:stun.stunprotocol.org:3478' },
+    { urls: 'stun:stun.voip.blackberry.com:3478' },
+
+    // Metered TURN servers (free tier - reliable for cross-network)
+    {
+      urls: 'turn:a.relay.metered.ca:80',
+      username: 'e8dd65c92c5e4db0beee5a40',
+      credential: 'FvPvX6eqrHH/fFPT',
+    },
+    {
+      urls: 'turn:a.relay.metered.ca:80?transport=tcp',
+      username: 'e8dd65c92c5e4db0beee5a40',
+      credential: 'FvPvX6eqrHH/fFPT',
+    },
+    {
+      urls: 'turn:a.relay.metered.ca:443',
+      username: 'e8dd65c92c5e4db0beee5a40',
+      credential: 'FvPvX6eqrHH/fFPT',
+    },
+    {
+      urls: 'turn:a.relay.metered.ca:443?transport=tcp',
+      username: 'e8dd65c92c5e4db0beee5a40',
+      credential: 'FvPvX6eqrHH/fFPT',
+    },
+    {
+      urls: 'turns:a.relay.metered.ca:443',
+      username: 'e8dd65c92c5e4db0beee5a40',
+      credential: 'FvPvX6eqrHH/fFPT',
+    },
+
+    // OpenRelay TURN servers (backup)
     {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
@@ -34,6 +63,8 @@ const ICE_SERVERS: RTCConfiguration = {
   ],
   iceCandidatePoolSize: 10,
   iceTransportPolicy: 'all',
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require',
 };
 
 export class WebRTCManager {
@@ -44,7 +75,7 @@ export class WebRTCManager {
   private ws: WebSocket | null = null;
   private myId: string = '';
   private isMicEnabled: boolean = false;
-  
+  private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
   private onPeerAudio: (peerId: string, stream: MediaStream) => void;
   private onPeerDisconnect: (peerId: string) => void;
   private onUserConnected: (userId: string) => void;
@@ -66,10 +97,11 @@ export class WebRTCManager {
     return this.myId;
   }
 
-  // --- Audio Initialization ---
   async initLocalStream(): Promise<MediaStream> {
     try {
-      console.log('Requesting microphone access...');
+      console.log('🎤 Requesting microphone access with enhanced audio processing...');
+
+      // Request microphone with aggressive noise/echo cancellation
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -82,22 +114,21 @@ export class WebRTCManager {
         video: false,
       });
 
-      try {
-        this.processedStream = await this.applyAdvancedAudioProcessing(this.localStream);
-        console.log('✅ Audio processing applied');
-      } catch (err) {
-        console.warn('⚠️ Audio processing failed, using raw stream', err);
-        this.processedStream = this.localStream;
-      }
+      // Apply additional audio processing
+      this.processedStream = await this.applyAdvancedAudioProcessing(this.localStream);
 
-      const streamToUse = this.processedStream || this.localStream;
-      streamToUse!.getAudioTracks().forEach((track) => {
-        track.enabled = false; // Muted by default
+      // Start with mic DISABLED but track exists
+      this.processedStream.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+        console.log('🎤 Audio track created and disabled:', track.id);
       });
       this.isMicEnabled = false;
 
-      await this.addTracksToAllPeers();
-      return streamToUse!;
+      // CRITICAL: Add tracks to all existing peer connections and renegotiate
+      await this.addTracksToAllPeersAndRenegotiate();
+
+      console.log('✅ Local stream initialized with enhanced noise cancellation, mic OFF');
+      return this.processedStream;
     } catch (error) {
       console.error('❌ Error accessing microphone:', error);
       throw error;
@@ -105,104 +136,111 @@ export class WebRTCManager {
   }
 
   private async applyAdvancedAudioProcessing(stream: MediaStream): Promise<MediaStream> {
-    if (!this.audioContext || this.audioContext.state === 'closed') {
+    try {
       this.audioContext = new AudioContext({ sampleRate: 48000 });
-    }
-    await this.ensureAudioContextResumed();
 
-    const source = this.audioContext.createMediaStreamSource(stream);
-    const destination = this.audioContext.createMediaStreamDestination();
+      const source = this.audioContext.createMediaStreamSource(stream);
+      const destination = this.audioContext.createMediaStreamDestination();
 
-    const highPassFilter = this.audioContext.createBiquadFilter();
-    highPassFilter.type = 'highpass';
-    highPassFilter.frequency.value = 85;
-    highPassFilter.Q.value = 0.7;
+      // High-pass filter to remove low frequency noise
+      const highPassFilter = this.audioContext.createBiquadFilter();
+      highPassFilter.type = 'highpass';
+      highPassFilter.frequency.value = 85;
+      highPassFilter.Q.value = 0.7;
 
-    const lowPassFilter = this.audioContext.createBiquadFilter();
-    lowPassFilter.type = 'lowpass';
-    lowPassFilter.frequency.value = 8000;
-    lowPassFilter.Q.value = 0.7;
+      // Low-pass filter to remove high frequency noise
+      const lowPassFilter = this.audioContext.createBiquadFilter();
+      lowPassFilter.type = 'lowpass';
+      lowPassFilter.frequency.value = 8000;
+      lowPassFilter.Q.value = 0.7;
 
-    const compressor = this.audioContext.createDynamicsCompressor();
-    compressor.threshold.value = -24;
-    compressor.knee.value = 30;
-    compressor.ratio.value = 12;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.25;
+      // Dynamics compressor to even out volume
+      const compressor = this.audioContext.createDynamicsCompressor();
+      compressor.threshold.value = -24;
+      compressor.knee.value = 30;
+      compressor.ratio.value = 12;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.25;
 
-    const gainNode = this.audioContext.createGain();
-    gainNode.gain.value = 1.2;
+      // Gain node to boost voice
+      const gainNode = this.audioContext.createGain();
+      gainNode.gain.value = 1.2;
 
-    source.connect(highPassFilter);
-    highPassFilter.connect(lowPassFilter);
-    lowPassFilter.connect(compressor);
-    compressor.connect(gainNode);
-    gainNode.connect(destination);
+      // Connect the audio processing chain
+      source.connect(highPassFilter);
+      highPassFilter.connect(lowPassFilter);
+      lowPassFilter.connect(compressor);
+      compressor.connect(gainNode);
+      gainNode.connect(destination);
 
-    return destination.stream;
-  }
+      console.log('🔊 Advanced audio processing applied');
 
-  private async ensureAudioContextResumed() {
-    if (this.audioContext && this.audioContext.state === 'suspended') {
-      try {
-        await this.audioContext.resume();
-        console.log('🔊 AudioContext Resumed');
-      } catch (e) {
-        console.warn('Waiting for user interaction to resume AudioContext');
-      }
+      return destination.stream;
+    } catch (error) {
+      console.warn('⚠️ Failed to apply advanced audio processing, using original stream:', error);
+      return stream;
     }
   }
 
-  // --- Peer & Connection Logic ---
-  private async addTracksToAllPeers() {
+  private async addTracksToAllPeersAndRenegotiate() {
     const streamToUse = this.processedStream || this.localStream;
     if (!streamToUse) return;
 
+    console.log('🔄 Adding tracks to all existing peers:', this.peers.size);
+
     for (const [peerId, peer] of this.peers) {
-      await this.attachLocalAudio(peerId, peer.connection);
-      if (peer.connection.signalingState === 'stable') {
+      const senders = peer.connection.getSenders();
+      const hasAudioSender = senders.some(s => s.track?.kind === 'audio');
+
+      if (!hasAudioSender) {
+        console.log('➕ Adding audio track to peer:', peerId);
+        streamToUse.getTracks().forEach((track) => {
+          peer.connection.addTrack(track, streamToUse);
+        });
+
+        // Renegotiate connection
         await this.renegotiate(peerId, peer.connection);
       }
     }
   }
 
   private async renegotiate(peerId: string, peerConnection: RTCPeerConnection) {
-    const peer = this.peers.get(peerId);
-    if (!peer) return;
-
-    if (!peerConnection.remoteDescription && peerConnection.signalingState !== 'have-local-offer') return;
-    if (peer.makingOffer) return;
-
     try {
-      peer.makingOffer = true;
+      console.log('🔄 Renegotiating with peer:', peerId);
       const offer = await peerConnection.createOffer();
-      if (peerConnection.localDescription?.sdp === offer.sdp) return;
-
       await peerConnection.setLocalDescription(offer);
+
       this.sendToSignalingServer({
         type: 'offer',
         to: peerId,
-        sdp: peerConnection.localDescription,
+        sdp: offer,
       });
     } catch (error) {
-      console.error('Renegotiation error:', error);
-    } finally {
-      peer.makingOffer = false;
+      console.error('❌ Renegotiation failed:', error);
     }
   }
 
-  connectToSignalingServer(serverUrl: string, onOpen?: () => void): Promise<string> {
+  hasLocalStream(): boolean {
+    return this.localStream !== null || this.processedStream !== null;
+  }
+
+  connectToSignalingServer(
+    serverUrl: string,
+    onOpen?: () => void
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       try {
-        console.log('Connecting to:', serverUrl);
+        console.log('🔌 Connecting to signaling server:', serverUrl);
+
         const connectionTimeout = setTimeout(() => {
-          reject(new Error('Connection timeout'));
+          console.error('⏱️ WebSocket connection timeout');
+          reject(new Error('Connection timeout - server not responding'));
         }, 10000);
 
         this.ws = new WebSocket(serverUrl);
 
         this.ws.onopen = () => {
-          console.log('✅ WS Connected');
+          console.log('✅ WebSocket connected to signaling server');
           clearTimeout(connectionTimeout);
           onOpen?.();
         };
@@ -210,208 +248,369 @@ export class WebRTCManager {
         this.ws.onmessage = async (event) => {
           try {
             const data = JSON.parse(event.data);
-            
-            if (data.type === 'welcome' && data.id) {
-              this.myId = data.id;
-              console.log('🆔 My ID:', this.myId);
-              if (data.users && Array.isArray(data.users)) {
-                for (const userId of data.users) {
-                  if (userId === this.myId) continue;
-                  this.onUserConnected(userId);
-                  await this.createOffer(userId);
-                }
-              }
-              resolve(this.myId);
-              return;
-            }
-
-            if (data.from && data.from !== this.myId) {
-                switch (data.type) {
-                case 'offer': await this.handleOffer(data.from, data.sdp); break;
-                case 'answer': await this.handleAnswer(data.from, data.sdp); break;
-                case 'ice-candidate': await this.handleIceCandidate(data.from, data.candidate); break;
-                case 'mic-status': this.onMicStatusChange(data.id, data.status); break;
-                case 'user-disconnected': this.removePeer(data.id); break;
-                }
-            }
-            
-            if (data.type === 'user-connected' && data.id && data.id !== this.myId) {
-              this.onUserConnected(data.id);
-              await this.createOffer(data.id);
-            }
-          } catch (err) {
-            console.error('WS Message Error:', err);
+            console.log('📩 Received signaling message:', data.type, data);
+            await this.handleSignalingMessage(data, resolve);
+          } catch (parseError) {
+            console.error('Failed to parse message:', parseError, event.data);
           }
         };
 
-        this.ws.onerror = (err) => {
+        this.ws.onerror = (error) => {
           clearTimeout(connectionTimeout);
-          reject(err);
+          console.error('❌ WebSocket error:', error);
+          reject(new Error(`WebSocket error - check if server is running at ${serverUrl}`));
         };
-        this.ws.onclose = () => console.log('🔌 WS Disconnected');
+
+        this.ws.onclose = (event) => {
+          clearTimeout(connectionTimeout);
+          console.log('🔌 Disconnected from signaling server', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean
+          });
+
+          if (!this.myId) {
+            reject(new Error(`Connection closed: ${event.reason || 'Unknown reason'} (code: ${event.code})`));
+          }
+        };
       } catch (error) {
+        console.error('Failed to create WebSocket:', error);
         reject(error);
       }
     });
   }
 
-  private createPeerConnection(peerId: string, isPolite: boolean = false): RTCPeerConnection {
-    const existingPeer = this.peers.get(peerId);
-    if (existingPeer) return existingPeer.connection;
+  private async handleSignalingMessage(data: any, resolve?: (value: string) => void) {
+    switch (data.type) {
+      // Handle 'welcome' message from server (initial connection)
+      case 'welcome':
+        if (data.id) {
+          this.myId = data.id;
+          console.log('🆔 My ID assigned (welcome):', this.myId);
+          resolve?.(this.myId);
 
-    console.log(`Creating PC for ${peerId}`);
-    const peerConnection = new RTCPeerConnection(ICE_SERVERS);
-    const audioTransceiver = peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
+          // Handle existing users in the room from welcome message
+          if (data.users && Array.isArray(data.users)) {
+            console.log('👥 Existing users in room:', data.users);
+            for (const userId of data.users) {
+              if (userId !== this.myId) {
+                this.onUserConnected(userId);
+                await this.createOffer(userId);
+              }
+            }
+          }
+        }
+        break;
 
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.sendToSignalingServer({ type: 'ice-candidate', to: peerId, candidate: event.candidate });
-      }
-    };
+      case 'user-connected':
+        if (data.id) {
+          if (!this.myId) {
+            this.myId = data.id;
+            console.log('🆔 My ID assigned:', this.myId);
+            resolve?.(this.myId);
+          } else if (data.id !== this.myId) {
+            console.log('👤 New user connected:', data.id);
+            this.onUserConnected(data.id);
+            // Initiate connection to new user
+            await this.createOffer(data.id);
+          }
+        }
+        break;
 
-    peerConnection.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (peerId === this.myId) return;
-      this.ensureAudioContextResumed().catch(console.error);
-      this.onPeerAudio(peerId, remoteStream);
-    };
+      case 'user-list':
+        // Handle existing users in the room
+        if (data.users && Array.isArray(data.users)) {
+          console.log('👥 Received user list:', data.users);
+          for (const userId of data.users) {
+            if (userId !== this.myId) {
+              this.onUserConnected(userId);
+              await this.createOffer(userId);
+            }
+          }
+        }
+        break;
 
-    peerConnection.onconnectionstatechange = () => {
-      if (['disconnected', 'failed'].includes(peerConnection.connectionState)) {
-        this.removePeer(peerId);
-      }
-    };
+      case 'offer':
+        console.log('📥 Received offer from:', data.from);
+        await this.handleOffer(data.from, data.sdp);
+        break;
 
-    this.peers.set(peerId, {
-      id: peerId,
-      connection: peerConnection,
-      audioSender: audioTransceiver.sender,
-      isPolite,
-      makingOffer: false,
-      pendingCandidates: [],
-    });
+      case 'answer':
+        console.log('📥 Received answer from:', data.from);
+        await this.handleAnswer(data.from, data.sdp);
+        break;
 
-    return peerConnection;
-  }
+      case 'ice-candidate':
+        await this.handleIceCandidate(data.from, data.candidate);
+        break;
 
-  private async attachLocalAudio(peerId: string, peerConnection: RTCPeerConnection) {
-    const peer = this.peers.get(peerId);
-    const streamToUse = this.processedStream || this.localStream;
-    const track = streamToUse?.getAudioTracks()[0];
-    if (!peer || !track) return;
+      case 'mic-status':
+        this.onMicStatusChange(data.id, data.status);
+        break;
 
-    try {
-      if (peer.audioSender) {
-        if (peer.audioSender.track?.id === track.id) return;
-        await peer.audioSender.replaceTrack(track);
-      } else {
-        peer.audioSender = peerConnection.addTrack(track, streamToUse!);
-      }
-    } catch (error) {
-      console.error('Track attachment failed:', error);
+      case 'user-disconnected':
+        if (data.id) {
+          console.log('👋 User disconnected:', data.id);
+          this.removePeer(data.id);
+        }
+        break;
+
+      default:
+        console.log('📩 Unknown message type:', data.type, data);
     }
   }
 
   private async createOffer(peerId: string) {
-    const isPolite = this.myId < peerId;
-    const peerConnection = this.createPeerConnection(peerId, isPolite);
-    const peer = this.peers.get(peerId)!;
+    console.log('📤 Creating offer for peer:', peerId);
+    const peerConnection = this.createPeerConnection(peerId);
 
-    if (peer.makingOffer || peerConnection.signalingState !== 'stable') return;
+    // CRITICAL: Always add a transceiver for audio even without local stream
+    const existingTransceivers = peerConnection.getTransceivers();
+    const hasAudioTransceiver = existingTransceivers.some(t => t.receiver.track.kind === 'audio');
 
-    await this.attachLocalAudio(peerId, peerConnection);
+    if (!hasAudioTransceiver) {
+      // Add transceiver to receive audio
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+      console.log('📻 Added audio transceiver (recvonly)');
+    }
+
+    const streamToUse = this.processedStream || this.localStream;
+    if (streamToUse) {
+      const senders = peerConnection.getSenders();
+      const hasAudioSender = senders.some(s => s.track?.kind === 'audio');
+
+      if (!hasAudioSender) {
+        console.log('➕ Adding local tracks to offer');
+        streamToUse.getTracks().forEach((track) => {
+          peerConnection.addTrack(track, streamToUse);
+        });
+
+        // Update transceiver direction to sendrecv
+        const transceivers = peerConnection.getTransceivers();
+        transceivers.forEach(t => {
+          if (t.receiver.track.kind === 'audio') {
+            t.direction = 'sendrecv';
+          }
+        });
+      }
+    }
 
     try {
-      peer.makingOffer = true;
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
 
       this.sendToSignalingServer({
         type: 'offer',
         to: peerId,
-        sdp: peerConnection.localDescription,
+        sdp: offer,
       });
+      console.log('📤 Offer sent to:', peerId);
     } catch (error) {
-      console.error('Create offer error:', error);
-    } finally {
-      peer.makingOffer = false;
+      console.error('❌ Failed to create offer:', error);
     }
   }
 
   private async handleOffer(peerId: string, sdp: RTCSessionDescriptionInit) {
-    const isPolite = this.myId < peerId;
+    console.log('📥 Handling offer from peer:', peerId);
+
     let peer = this.peers.get(peerId);
     let peerConnection: RTCPeerConnection;
 
     if (peer) {
       peerConnection = peer.connection;
     } else {
-      peerConnection = this.createPeerConnection(peerId, isPolite);
-      peer = this.peers.get(peerId)!;
+      peerConnection = this.createPeerConnection(peerId);
     }
-
-    const offerCollision = peer.makingOffer || peerConnection.signalingState !== 'stable';
-    if (offerCollision && !peer.isPolite) return;
-
-    await this.attachLocalAudio(peerId, peerConnection);
 
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-      await this.processPendingCandidates(peer);
+      console.log('✅ Remote description set for:', peerId);
+
+      // Process any pending ICE candidates
+      const pending = this.pendingCandidates.get(peerId);
+      if (pending) {
+        console.log(`📦 Processing ${pending.length} pending ICE candidates`);
+        for (const candidate of pending) {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+        this.pendingCandidates.delete(peerId);
+      }
+
+      const streamToUse = this.processedStream || this.localStream;
+      if (streamToUse) {
+        const senders = peerConnection.getSenders();
+        const hasAudioSender = senders.some(s => s.track?.kind === 'audio');
+
+        if (!hasAudioSender) {
+          console.log('➕ Adding local tracks to answer');
+          streamToUse.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, streamToUse);
+          });
+        }
+      }
+
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
-      this.sendToSignalingServer({ type: 'answer', to: peerId, sdp: answer });
+
+      this.sendToSignalingServer({
+        type: 'answer',
+        to: peerId,
+        sdp: answer,
+      });
+      console.log('📤 Answer sent to:', peerId);
     } catch (error) {
-      console.error('Handle offer error:', error);
+      console.error('❌ Failed to handle offer:', error);
     }
   }
 
   private async handleAnswer(peerId: string, sdp: RTCSessionDescriptionInit) {
     const peer = this.peers.get(peerId);
-    if (!peer || peer.connection.signalingState !== 'have-local-offer') return;
-    try {
-      await peer.connection.setRemoteDescription(new RTCSessionDescription(sdp));
-      await this.processPendingCandidates(peer);
-    } catch (error) {
-      console.error('Handle answer error:', error);
+    if (peer) {
+      try {
+        await peer.connection.setRemoteDescription(new RTCSessionDescription(sdp));
+        console.log('✅ Answer applied for:', peerId);
+
+        // Process any pending ICE candidates
+        const pending = this.pendingCandidates.get(peerId);
+        if (pending) {
+          console.log(`📦 Processing ${pending.length} pending ICE candidates`);
+          for (const candidate of pending) {
+            await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+          this.pendingCandidates.delete(peerId);
+        }
+      } catch (error) {
+        console.error('❌ Failed to set remote description:', error);
+      }
     }
   }
 
   private async handleIceCandidate(peerId: string, candidate: RTCIceCandidateInit) {
     const peer = this.peers.get(peerId);
-    if (!peer) return;
+    if (!candidate) return;
 
-    if (!peer.connection.remoteDescription) {
-        peer.pendingCandidates.push(candidate);
+    if (peer && peer.connection.remoteDescription) {
+      try {
+        await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log('🧊 ICE candidate added for:', peerId);
+      } catch (error) {
+        console.error('❌ Error adding ICE candidate:', error);
+      }
+    } else {
+      // Queue the candidate until remote description is set
+      console.log('📦 Queueing ICE candidate for:', peerId);
+      if (!this.pendingCandidates.has(peerId)) {
+        this.pendingCandidates.set(peerId, []);
+      }
+      this.pendingCandidates.get(peerId)!.push(candidate);
+    }
+  }
+
+  private createPeerConnection(peerId: string): RTCPeerConnection {
+    const existingPeer = this.peers.get(peerId);
+    if (existingPeer) {
+      console.log('♻️ Reusing existing peer connection for:', peerId);
+      return existingPeer.connection;
+    }
+
+    console.log('🆕 Creating new peer connection for:', peerId);
+    const peerConnection = new RTCPeerConnection(ICE_SERVERS);
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        const candidateType = event.candidate.type || 'unknown';
+        console.log(`🧊 ICE candidate [${candidateType}] for ${peerId}:`, event.candidate.candidate?.substring(0, 50));
+        this.sendToSignalingServer({
+          type: 'ice-candidate',
+          to: peerId,
+          candidate: event.candidate,
+        });
+      } else {
+        console.log(`✅ ICE gathering complete for ${peerId}`);
+      }
+    };
+
+    peerConnection.onicegatheringstatechange = () => {
+      console.log(`🔍 ICE gathering state for ${peerId}:`, peerConnection.iceGatheringState);
+    };
+
+    peerConnection.ontrack = (event) => {
+      console.log('🎵 Received track from peer:', peerId, 'kind:', event.track.kind);
+
+      if (event.track.kind !== 'audio') return;
+
+      const [remoteStream] = event.streams;
+
+      // Skip our own audio
+      if (peerId === this.myId) {
+        console.log('🔇 Skipping own audio stream');
         return;
+      }
+
+      console.log('🔊 Playing remote audio from peer:', peerId);
+      this.onPeerAudio(peerId, remoteStream);
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState;
+      console.log(`📶 Peer ${peerId} connection state:`, state);
+
+      if (state === 'connected') {
+        console.log(`✅ Successfully connected to peer: ${peerId}`);
+        this.logSelectedCandidatePair(peerConnection, peerId);
+      }
+      if (state === 'disconnected' || state === 'failed') {
+        console.log(`❌ Connection ${state} for peer: ${peerId}`);
+        this.removePeer(peerId);
+      }
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      const iceState = peerConnection.iceConnectionState;
+      console.log(`🧊 Peer ${peerId} ICE state:`, iceState);
+
+      // Handle ICE connection failures
+      if (iceState === 'failed') {
+        console.log(`🔄 ICE failed for ${peerId}, attempting ICE restart...`);
+        this.restartIce(peerId, peerConnection);
+      }
+    };
+
+    peerConnection.onnegotiationneeded = async () => {
+      console.log(`🔄 Negotiation needed for peer: ${peerId}`);
+    };
+
+    this.peers.set(peerId, { id: peerId, connection: peerConnection });
+    return peerConnection;
+  }
+
+  private sendToSignalingServer(message: any) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('📤 Sending to signaling server:', message.type, 'to:', message.to);
+      this.ws.send(JSON.stringify(message));
+    } else {
+      console.warn('⚠️ WebSocket not ready, cannot send:', message.type);
     }
-    await this.addIceCandidateSafely(peer.connection, candidate);
   }
 
-  private async addIceCandidateSafely(pc: RTCPeerConnection, candidate: RTCIceCandidateInit) {
-    try {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (error) {
-      console.warn('⚠️ Soft ICE Error:', error);
-    }
+  sendMicStatus(status: boolean) {
+    this.sendToSignalingServer({
+      type: 'mic-status',
+      status,
+    });
   }
 
-  private async processPendingCandidates(peer: PeerConnection) {
-    if (peer.pendingCandidates.length === 0) return;
-    const candidates = [...peer.pendingCandidates];
-    peer.pendingCandidates = [];
-    for (const c of candidates) await this.addIceCandidateSafely(peer.connection, c);
-  }
-
-  // --- Mic & Status (FIXED: Added missing method) ---
-  
   toggleMic(enabled: boolean) {
-    if (enabled) {
-      this.ensureAudioContextResumed().catch(console.error);
-    }
+    console.log('🎤 toggleMic called with:', enabled);
+
     const streamToUse = this.processedStream || this.localStream;
     if (streamToUse) {
-        streamToUse.getAudioTracks().forEach(t => t.enabled = enabled);
+      streamToUse.getAudioTracks().forEach((track) => {
+        track.enabled = enabled;
+        console.log('🎤 Audio track enabled:', track.enabled);
+      });
+    } else {
+      console.warn('⚠️ No local stream to toggle mic');
     }
     this.isMicEnabled = enabled;
     this.sendMicStatus(enabled);
@@ -421,21 +620,45 @@ export class WebRTCManager {
     return this.isMicEnabled;
   }
 
-  // 👇 นี่คือฟังก์ชันที่หายไปในรอบที่แล้วครับ เพิ่มให้แล้วครับ
-  sendMicStatus(status: boolean) {
-    this.sendToSignalingServer({
-      type: 'mic-status',
-      status,
-    });
+  private async logSelectedCandidatePair(peerConnection: RTCPeerConnection, peerId: string) {
+    try {
+      const stats = await peerConnection.getStats();
+      stats.forEach((report) => {
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          console.log(`📊 Selected candidate pair for ${peerId}:`, {
+            localType: report.localCandidateId,
+            remoteType: report.remoteCandidateId,
+            bytesSent: report.bytesSent,
+            bytesReceived: report.bytesReceived,
+          });
+        }
+        if (report.type === 'local-candidate' || report.type === 'remote-candidate') {
+          console.log(`📊 ${report.type} for ${peerId}:`, {
+            candidateType: report.candidateType,
+            protocol: report.protocol,
+            address: report.address,
+            port: report.port,
+          });
+        }
+      });
+    } catch (error) {
+      console.warn('Could not get candidate pair stats:', error);
+    }
   }
 
-  hasLocalStream(): boolean {
-    return this.localStream !== null;
-  }
+  private async restartIce(peerId: string, peerConnection: RTCPeerConnection) {
+    try {
+      console.log(`🔄 Restarting ICE for peer: ${peerId}`);
+      const offer = await peerConnection.createOffer({ iceRestart: true });
+      await peerConnection.setLocalDescription(offer);
 
-  private sendToSignalingServer(message: any) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
+      this.sendToSignalingServer({
+        type: 'offer',
+        to: peerId,
+        sdp: offer,
+      });
+    } catch (error) {
+      console.error('ICE restart failed:', error);
     }
   }
 
@@ -444,18 +667,38 @@ export class WebRTCManager {
     if (peer) {
       peer.connection.close();
       this.peers.delete(peerId);
+      this.pendingCandidates.delete(peerId);
       this.onPeerDisconnect(peerId);
+      console.log('👋 Peer removed:', peerId);
     }
   }
 
   disconnect() {
-    this.peers.forEach((peer) => peer.connection.close());
+    console.log('🔌 Disconnecting WebRTC manager...');
+    this.peers.forEach((peer) => {
+      peer.connection.close();
+    });
     this.peers.clear();
-    this.localStream?.getTracks().forEach((t) => t.stop());
-    this.processedStream?.getTracks().forEach((t) => t.stop());
-    this.audioContext?.close().catch(console.error);
-    this.ws?.close();
-    this.myId = '';
-    this.isMicEnabled = false;
+    this.pendingCandidates.clear();
+
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) => track.stop());
+      this.localStream = null;
+    }
+
+    if (this.processedStream) {
+      this.processedStream.getTracks().forEach((track) => track.stop());
+      this.processedStream = null;
+    }
+
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
+
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
   }
 }
